@@ -1,0 +1,47 @@
+# Scales payment-router from its baseline 6 replicas up to 200 under load,
+# purely on CPU utilization. 200 is a deliberately high ceiling: a
+# cross-border payments router needs headroom for volume spikes (e.g. a
+# trade-settlement batch window) that would be a normal Tuesday for one
+# corridor and a 30x spike for another — better to let the HPA burst and
+# scale back down than to hand-tune a lower ceiling per deployment.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: payment-router-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: payment-router
+  minReplicas: 6
+  maxReplicas: 200
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 65
+  behavior:
+    scaleUp:
+      # Scale up fast — a slow scale-up under a payment-volume spike means
+      # requests queuing (or timing out) against fx_rates_engine and
+      # risk_compliance downstream, not just payment_router itself.
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+        - type: Pods
+          value: 20
+          periodSeconds: 60
+      selectPolicy: Max
+    scaleDown:
+      # Scale down slowly — avoid flapping pods up and down across a
+      # noisy but temporary dip in traffic.
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 25
+          periodSeconds: 120
+      selectPolicy: Min

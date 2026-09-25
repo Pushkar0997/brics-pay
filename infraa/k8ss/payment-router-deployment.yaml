@@ -1,0 +1,77 @@
+# Deployment for payment_router — the service the HPA in
+# payment-router-hpa.yaml scales, since it's the one on the critical path
+# that does the actual orchestration work (and therefore the one whose
+# CPU usage tracks transaction volume most directly).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-router
+  labels:
+    app: payment-router
+spec:
+  replicas: 6
+  selector:
+    matchLabels:
+      app: payment-router
+  template:
+    metadata:
+      labels:
+        app: payment-router
+    spec:
+      containers:
+        - name: payment-router
+          image: brics-pay/payment-router:latest   # built from repo root Dockerfile
+          ports:
+            - containerPort: 8000
+          env:
+            - name: SERVICE_NAME
+              value: payment_router
+            - name: SERVICE_MODULE
+              value: services.payment_router.main:app
+            - name: ENVIRONMENT
+              value: production
+            - name: FX_RATES_URL
+              value: http://fx-rates-engine:8000
+            - name: RISK_COMPLIANCE_URL
+              value: http://risk-compliance:8000
+            - name: SETTLEMENT_LEDGER_URL
+              value: http://settlement-ledger:8000
+            - name: STATIC_BEARER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: brics-pay-service-token
+                  key: token
+          resources:
+            # Requests are what the HPA's CPU-utilization percentage is
+            # computed against — sized deliberately small (0.25 core) so
+            # the 6->200 pod range in the HPA has room to actually scale
+            # rather than hitting a cluster resource ceiling first.
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-router
+spec:
+  selector:
+    app: payment-router
+  ports:
+    - port: 8000
+      targetPort: 8000
