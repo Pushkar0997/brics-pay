@@ -1,0 +1,34 @@
+version: "3.9"
+services:
+  control-plane:
+    build: .
+    command: uvicorn control_plane.main:app --host 0.0.0.0 --port 8000
+    ports: ["8000:8000"]
+
+  api-gateway:
+    build: .
+    command: uvicorn services.api_gateway.main:app --host 0.0.0.0 --port 8080
+    ports: ["8080:8080"]
+    depends_on: [payment-router]
+
+  payment-router:
+    build: .
+    command: uvicorn services.payment_router.main:app --host 0.0.0.0 --port 8001
+    ports: ["8001:8001"]
+    depends_on: [fx-rates-engine, risk-compliance, settlement-ledger, control-plane]
+
+  fx-rates-engine:
+    build: .
+    command: uvicorn services.fx_rates_engine.main:app --host 0.0.0.0 --port 8002
+    ports: ["8002:8002"]
+
+  risk-compliance:
+    build: .
+    command: uvicorn services.risk_compliance.main:app --host 0.0.0.0 --port 8003
+    ports: ["8003:8003"]
+    depends_on: [control-plane]
+
+  settlement-ledger:
+    build: .
+    command: uvicorn services.settlement_ledger.main:app --host 0.0.0.0 --port 8004
+    ports: ["8004:8004"]

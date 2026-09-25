@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-router
+  labels:
+    app: payment-router
+    plane: data
+spec:
+  replicas: 6
+  selector:
+    matchLabels:
+      app: payment-router
+  template:
+    metadata:
+      labels:
+        app: payment-router
+        plane: data
+    spec:
+      containers:
+        - name: payment-router
+          image: brics-pay/payment-router:latest
+          ports:
+            - containerPort: 8001
+          env:
+            - name: BRICS_REGION
+              value: "ap-south-1"
+            - name: CONTROL_PLANE_URL
+              value: "http://control-plane:8000"
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8001
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8001
+            initialDelaySeconds: 10
+            periodSeconds: 20
