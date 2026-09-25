@@ -5,6 +5,21 @@ discussed earlier: a hypothetical cross-border payment interoperability
 layer. It is not affiliated with, endorsed by, or descriptive of any real
 BRICS institution or deployed system.
 
+> **Status: v0 baseline.** Illustrative code generated before the spec existed.
+> Known gaps — no refund when a credit fails after a debit, per-process
+> idempotency, a hot ledger partition, and a synchronous core described as
+> event-driven — are tracked as milestones M0 and M1. The baseline is tagged
+> `v0-baseline`.
+
+## How this project is run
+
+Spec-driven. Start with [`BRIEF.md`](BRIEF.md) for current state, then
+[`CONTRACT.md`](CONTRACT.md) for the rules the money path must never break.
+Every property the design claims is tracked in the claims register
+([`spec/architecture.md` §8](spec/architecture.md)) as *honored* (code and a
+test back it), *conceptual* (shown in the design only), or *claimed* (not yet
+true, and scheduled).
+
 ## Layout
 
 - `common/` — shared models, config, auth, idempotency (used by every service)
@@ -50,12 +65,23 @@ at each step.
 
 ## What's a stub vs. what's real logic
 
-Real logic: the state machine, the orchestration flow, geo-partitioning,
-idempotency, the control-plane/data-plane separation, and the adapter
+Real logic: the state machine, the orchestration flow for the happy path,
+the control-plane/data-plane split as a structure, and the adapter
 interface pattern.
 
-Stubbed for the demo: the FX rate table (static, not a live feed), the
-national rail calls (return success after a no-op `sleep(0)`), the event
-bus (in-process queue instead of Kafka/Pulsar), and auth (checks a token
-is present, doesn't verify a signature). Each stub has a comment marking
-what a production implementation would plug in.
+Known broken in v0 (fixed in M0/M1): failure handling after a debit,
+idempotency across replicas, ledger partitioning, and control-plane
+isolation. See the claims register.
+
+Stubbed by design: the FX rate table (static, not a live feed), the national
+rail calls (return success after a no-op `sleep(0)`), the event bus
+(in-process queue instead of Kafka/Pulsar), and auth (checks a token is
+present, doesn't verify a signature).
+
+## Running the tests
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+python3 -m pytest -q
+python3 scripts/spec_lint.py
+```
