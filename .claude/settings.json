@@ -33,3 +33,19 @@
     ]
   }
 }
+
+// This configuration file defines permissions and hooks for a project. It denies reading certain environment files and executing specific git commands. It also sets up pre-tool and post-tool hooks to run scripts for protecting contracts and checking specifications, as well as a stop hook to run a script when the process stops.
+
+// Permissions:
+// - Deny reading files matching ./ .env and ./ .env.*
+// - Deny executing bash commands: git push --force:* and git commit --no-verify:*
+
+// Hooks:
+// PreToolUse:
+// - Before Edit, Write, or MultiEdit operations, run protect-contract.sh
+
+// PostToolUse:
+// - After Edit, Write, or MultiEdit operations, run spec-gate.sh with 'quick' argument
+
+// Stop:
+// - When the process stops, run spec-gate.sh with 'stop' argument
