@@ -10,9 +10,10 @@ from pydantic import BaseModel
 from common.idempotency import idempotency_store
 from common.models import Money, Party, TransactionRequest
 from services.payment_router.orchestrator import process_payment
+from datetime import datetime, timezone
 
 app = FastAPI(title="BRICS Pay - Payment Router")
-
+transactions: list[dict] = []  # in-memory demo log
 
 class RouteRequest(BaseModel):
     payer_id: str
@@ -58,8 +59,22 @@ async def route(req: RouteRequest) -> dict:
         "receive_currency": record.receive_amount.currency if record.receive_amount else None,
         "failure_reason": record.failure_reason,
     }
+    transactions.append({
+        **response,
+        "payer_country": req.payer_country,
+        "payee_country": req.payee_country,
+        "send_amount": str(req.send_amount),
+        "send_currency": req.send_currency,
+        "history": [st.value for st in record.history] + [record.state.value],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
     idempotency_store.complete(key, response)
     return response
+
+
+@app.get("/internal/transactions")
+def list_transactions() -> list[dict]:
+    return list(reversed(transactions))
 
 
 @app.get("/healthz")
