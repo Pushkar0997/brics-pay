@@ -7,6 +7,28 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+
+def mid_market_rate(base: str, quote: str) -> Decimal:
+        if base == quote:
+            return Decimal("1")
+        if (base, quote) in _MID_MARKET_RATES:
+            return _MID_MARKET_RATES[(base, quote)]
+        # Cross rate through INR: BASE -> INR -> QUOTE
+        to_inr = _rate_to_inr(base)
+        from_inr = _MID_MARKET_RATES.get(("INR", quote)) if quote != "INR" else Decimal("1")
+        if to_inr is None or from_inr is None:
+            raise ValueError(f"no rate available for {base}->{quote}")
+        return (to_inr * from_inr).quantize(Decimal("0.000001"))
+
+@staticmethod
+def _rate_to_inr(ccy: str) -> Decimal | None:
+        if ccy == "INR":
+            return Decimal("1")
+        if (ccy, "INR") in _MID_MARKET_RATES:
+            return _MID_MARKET_RATES[(ccy, "INR")]
+        inverse = _MID_MARKET_RATES.get(("INR", ccy))
+        return (Decimal(1) / inverse) if inverse else None
+
 _MID_MARKET_RATES: dict[tuple[str, str], Decimal] = {
     ("INR", "CNY"): Decimal("0.086"),
     ("CNY", "INR"): Decimal("11.63"),
@@ -15,7 +37,6 @@ _MID_MARKET_RATES: dict[tuple[str, str], Decimal] = {
     ("INR", "ZAR"): Decimal("0.22"),
     ("INR", "USD"): Decimal("0.012"),
 }
-
 
 class RateProvider:
     def __init__(self, spread_bps: int = 25) -> None:
