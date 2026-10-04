@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 import httpx
 from fastapi import Depends, FastAPI
 from pydantic import BaseModel
-
+from fastapi import Depends, FastAPI, HTTPException
 from common.auth import require_caller
 from common.config import load_settings
 
@@ -39,9 +39,13 @@ async def create_payment(req: PaymentRequest, caller: str = Depends(require_call
             f"{PAYMENT_ROUTER_URL}/internal/route",
             json=req.model_dump(mode="json"),
         )
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            try:
+                detail = resp.json().get("detail", "payment rejected")
+            except Exception:
+                detail = "payment router error"
+            raise HTTPException(status_code=resp.status_code, detail=detail)
         return resp.json()
-
 
 @app.get("/healthz")
 def healthz() -> dict:
