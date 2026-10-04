@@ -5,6 +5,7 @@ each country's domestic protocol, regulation and data-residency
 rules - the core only ever talks to this interface."""
 from __future__ import annotations
 
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
@@ -28,3 +29,11 @@ class NationalRailAdapter(ABC):
     @abstractmethod
     async def credit(self, party: Party, amount: Money) -> AdapterResult:
         """Push funds into the payee's domestic account."""
+
+    @abstractmethod
+    async def refund(self, party: Party, amount: Money) -> AdapterResult:
+        """Compensating action: return a previously debited amount to the payer."""
+
+    def should_fail_credit(self) -> bool:
+        """Fault injection for demos. Read at call time, never at import."""
+        return os.environ.get("BRICS_FAIL_CREDIT_COUNTRY", "").upper() == self.country_code

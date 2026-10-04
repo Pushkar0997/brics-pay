@@ -1,12 +1,12 @@
 """Payment orchestrator - walks a transaction through every stage.
 
-This is the concrete version of the India -> China example: an
-Indian user pays a Chinese merchant, and this function is what runs
-end to end. Each state transition publishes an event so
-reconciliation/analytics/audit can consume it asynchronously without
-being on the critical path.
-"""
+India -> China example: auth -> risk/KYC -> FX quote -> domestic debit ->
+settlement -> merchant credit -> confirmation. Any failure after the
+debit refunds the payer (REVERSING -> REVERSED)."""
 from __future__ import annotations
+
+import os
+from decimal import Decimal
 
 import httpx
 
@@ -16,9 +16,9 @@ from event_bus.producer import publish_event
 from event_bus.schemas import TransactionEvent
 from services.payment_router.state_machine import assert_valid_transition
 
-FX_RATES_ENGINE_URL = "http://fx-rates-engine:8002"
-RISK_COMPLIANCE_URL = "http://risk-compliance:8003"
-SETTLEMENT_LEDGER_URL = "http://settlement-ledger:8004"
+FX_RATES_ENGINE_URL = os.environ.get("FX_RATES_ENGINE_URL", "http://fx-rates-engine:8002")
+RISK_COMPLIANCE_URL = os.environ.get("RISK_COMPLIANCE_URL", "http://risk-compliance:8003")
+SETTLEMENT_LEDGER_URL = os.environ.get("SETTLEMENT_LEDGER_URL", "http://settlement-ledger:8004")
 
 
 class PaymentFailed(Exception):
@@ -43,17 +43,39 @@ async def _transition(record: TransactionRecord, target: TransactionState) -> No
     await _emit(record)
 
 
+_POST_DEBIT = {
+    TransactionState.DEBITED,
+    TransactionState.SETTLING,
+    TransactionState.SETTLED,
+}
+REFUND_RETRIES = 3
+# Transactions whose refund kept failing; a human must resolve them (INV-1).
+manual_review_queue: list[TransactionRecord] = []
+
+
+async def _reverse(record: TransactionRecord, reason: str) -> None:
+    """Refund the payer after a post-debit failure: ... -> REVERSING -> REVERSED."""
+    request = record.request
+    record.failure_reason = reason
+    await _transition(record, TransactionState.REVERSING)
+    adapter = get_adapter(request.payer.country)
+    for _ in range(REFUND_RETRIES):
+        result = await adapter.refund(request.payer, request.send_amount)
+        if result.success:
+            await _transition(record, TransactionState.REVERSED)
+            return
+    # Never FAILED, never REVERSED: stay REVERSING and flag for manual review.
+    manual_review_queue.append(record)
+
+
 async def process_payment(request: TransactionRequest) -> TransactionRecord:
     record = TransactionRecord(request=request, state=TransactionState.CREATED)
     await _emit(record)
 
     async with httpx.AsyncClient(timeout=10) as client:
         try:
-            # 1. Authenticate - the gateway already verified the caller's
-            #    token; here we just confirm the payer identity is live.
             await _transition(record, TransactionState.AUTHENTICATED)
 
-            # 2. Risk + KYC/AML screening
             risk_resp = await client.post(
                 f"{RISK_COMPLIANCE_URL}/check",
                 json={
@@ -71,7 +93,6 @@ async def process_payment(request: TransactionRequest) -> TransactionRecord:
             record.risk_score = risk["risk_score"]
             await _transition(record, TransactionState.RISK_CHECKED)
 
-            # 3. Live FX quote, e.g. INR -> CNY
             quote_currency = COUNTRY_CURRENCY.get(request.payee.country, request.send_amount.currency)
             fx_resp = await client.get(
                 f"{FX_RATES_ENGINE_URL}/quote",
@@ -83,23 +104,18 @@ async def process_payment(request: TransactionRequest) -> TransactionRecord:
             )
             fx_resp.raise_for_status()
             quote = fx_resp.json()
-            record.fx_rate = quote["rate"]
+            record.fx_rate = Decimal(quote["rate"])
             record.receive_amount = Money(amount=quote["converted_amount"], currency=quote["quote_currency"])
             await _transition(record, TransactionState.FX_QUOTED)
 
-            # 4. User authorization is assumed granted by the caller
-            #    reaching this endpoint (the gateway already collected it)
             await _transition(record, TransactionState.AUTHORIZED)
 
-            # 5. Domestic debit via the payer's national rail adapter
             payer_adapter = get_adapter(request.payer.country)
             debit_result = await payer_adapter.debit(request.payer, request.send_amount)
             if not debit_result.success:
                 raise PaymentFailed(f"domestic debit failed: {debit_result.error}")
             await _transition(record, TransactionState.DEBITED)
 
-            # 6. Settlement - net/gross settlement between the two
-            #    countries' correspondent accounts
             await _transition(record, TransactionState.SETTLING)
             settle_resp = await client.post(
                 f"{SETTLEMENT_LEDGER_URL}/settle",
@@ -116,7 +132,6 @@ async def process_payment(request: TransactionRequest) -> TransactionRecord:
             settle_resp.raise_for_status()
             await _transition(record, TransactionState.SETTLED)
 
-            # 7. Credit the merchant via their national rail adapter
             payee_adapter = get_adapter(request.payee.country)
             credit_result = await payee_adapter.credit(request.payee, record.receive_amount)
             if not credit_result.success:
@@ -126,6 +141,14 @@ async def process_payment(request: TransactionRequest) -> TransactionRecord:
             return record
 
         except PaymentFailed as exc:
-            record.failure_reason = exc.reason
+            reason = exc.reason
+        except (httpx.HTTPError, ValueError, KeyError) as exc:
+            reason = f"{type(exc).__name__}: {exc}"
+
+        # Before the debit nothing moved -> FAILED; after it the payer is refunded.
+        if record.state in _POST_DEBIT:
+            await _reverse(record, reason)
+        else:
+            record.failure_reason = reason
             await _transition(record, TransactionState.FAILED)
-            return record
+        return record

@@ -18,4 +18,10 @@ class RussiaSpfsAdapter(NationalRailAdapter):
 
     async def credit(self, party: Party, amount: Money) -> AdapterResult:
         await asyncio.sleep(0)
+        if self.should_fail_credit():
+            return AdapterResult(success=False, error="injected credit failure")
         return AdapterResult(success=True, rail_reference=f"spfs-{uuid4().hex[:10]}")
+
+    async def refund(self, party: Party, amount: Money) -> AdapterResult:
+        await asyncio.sleep(0)
+        return AdapterResult(success=True, rail_reference=f"spfs-refund-{uuid4().hex[:10]}")

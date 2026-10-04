@@ -29,6 +29,8 @@ class TransactionState(str, Enum):
     SETTLING = "SETTLING"
     SETTLED = "SETTLED"
     CONFIRMED = "CONFIRMED"
+    REVERSING = "REVERSING"
+    REVERSED = "REVERSED"
     FAILED = "FAILED"
 
 
@@ -38,6 +40,8 @@ class Money:
     currency: str  # ISO 4217, e.g. "INR", "CNY"
 
     def __post_init__(self) -> None:
+        if not isinstance(self.amount, Decimal):
+            object.__setattr__(self, "amount", Decimal(str(self.amount)))
         if self.amount <= 0:
             raise ValueError("amount must be positive")
         if len(self.currency) != 3:

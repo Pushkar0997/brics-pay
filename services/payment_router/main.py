@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from common.idempotency import idempotency_store
@@ -28,23 +28,38 @@ class RouteRequest(BaseModel):
 
 @app.post("/internal/route")
 async def route(req: RouteRequest) -> dict:
-    if not idempotency_store.check_and_set(req.idempotency_key):
-        return {"status": "duplicate_ignored", "idempotency_key": req.idempotency_key}
+    # Keys are scoped per payer (CONTRACT: pinned conventions).
+    key = f"{req.payer_id}:{req.idempotency_key}"
+    claimed, stored = idempotency_store.claim(key)
+    if not claimed:
+        if stored is not None:
+            return stored  # identical to the first response
+        raise HTTPException(status_code=409, detail="payment with this idempotency key is in progress")
 
-    request = TransactionRequest(
-        payer=Party(party_id=req.payer_id, country=req.payer_country, account_ref=req.payer_account_ref),
-        payee=Party(party_id=req.payee_id, country=req.payee_country, account_ref=req.payee_account_ref),
-        send_amount=Money(amount=req.send_amount, currency=req.send_currency),
-        idempotency_key=req.idempotency_key,
-    )
-    record = await process_payment(request)
-    return {
+    try:
+        request = TransactionRequest(
+            payer=Party(party_id=req.payer_id, country=req.payer_country, account_ref=req.payer_account_ref),
+            payee=Party(party_id=req.payee_id, country=req.payee_country, account_ref=req.payee_account_ref),
+            send_amount=Money(amount=req.send_amount, currency=req.send_currency),
+            idempotency_key=req.idempotency_key,
+        )
+        record = await process_payment(request)
+    except ValueError as exc:
+        idempotency_store.release(key)  # nothing happened; let the client retry
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception:
+        idempotency_store.release(key)
+        raise
+
+    response = {
         "transaction_id": record.request.transaction_id,
         "state": record.state.value,
         "receive_amount": str(record.receive_amount.amount) if record.receive_amount else None,
         "receive_currency": record.receive_amount.currency if record.receive_amount else None,
         "failure_reason": record.failure_reason,
     }
+    idempotency_store.complete(key, response)
+    return response
 
 
 @app.get("/healthz")

@@ -4,6 +4,7 @@ everything behind it is internal-only (zero-trust internal mesh)."""
 from __future__ import annotations
 
 from decimal import Decimal
+import os
 
 import httpx
 from fastapi import Depends, FastAPI
@@ -15,7 +16,7 @@ from common.config import load_settings
 settings = load_settings("api-gateway")
 app = FastAPI(title="BRICS Pay - API Gateway")
 
-PAYMENT_ROUTER_URL = "http://payment-router:8001"
+PAYMENT_ROUTER_URL = os.environ.get("PAYMENT_ROUTER_URL", "http://payment-router:8001")
 
 
 class PaymentRequest(BaseModel):

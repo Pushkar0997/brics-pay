@@ -9,10 +9,12 @@ VALID_TRANSITIONS: dict[TransactionState, set[TransactionState]] = {
     TransactionState.RISK_CHECKED: {TransactionState.FX_QUOTED, TransactionState.FAILED},
     TransactionState.FX_QUOTED: {TransactionState.AUTHORIZED, TransactionState.FAILED},
     TransactionState.AUTHORIZED: {TransactionState.DEBITED, TransactionState.FAILED},
-    TransactionState.DEBITED: {TransactionState.SETTLING, TransactionState.FAILED},
-    TransactionState.SETTLING: {TransactionState.SETTLED, TransactionState.FAILED},
-    TransactionState.SETTLED: {TransactionState.CONFIRMED},
+    TransactionState.DEBITED: {TransactionState.SETTLING, TransactionState.REVERSING},
+    TransactionState.SETTLING: {TransactionState.SETTLED, TransactionState.REVERSING},
+    TransactionState.SETTLED: {TransactionState.CONFIRMED, TransactionState.REVERSING},
     TransactionState.CONFIRMED: set(),
+    TransactionState.REVERSING: {TransactionState.REVERSED},
+    TransactionState.REVERSED: set(),
     TransactionState.FAILED: set(),
 }
 
