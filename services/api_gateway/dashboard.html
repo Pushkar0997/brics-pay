@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BRICS Pay - Payments dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#eef1f4;--panel:#fff;--ink:#14202b;--mute:#5d6b78;--line:#d5dce3;
+--ok:#0f6b63;--okbg:#dff1ee;--rev:#8a5a00;--revbg:#fbefd2;--bad:#a8322a;--badbg:#f8e0dd;--accent:#14202b}
+@media(prefers-color-scheme:dark){:root{--bg:#10171d;--panel:#18222b;--ink:#e6ecf1;--mute:#93a1ad;--line:#2b3946;
+--ok:#5fd1c4;--okbg:#12342f;--rev:#f0c264;--revbg:#3a2d0f;--bad:#ff8d82;--badbg:#3d1b18;--accent:#e6ecf1}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 "IBM Plex Sans",system-ui,sans-serif}
+.mono{font-family:"IBM Plex Mono",ui-monospace,Consolas,monospace;font-variant-numeric:tabular-nums}
+header{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:center;justify-content:space-between;padding:20px 28px;border-bottom:1px solid var(--line)}
+h1{margin:0;font-size:20px;font-weight:600}
+header p{margin:2px 0 0;color:var(--mute);font-size:12px}
+.health{display:flex;flex-wrap:wrap;gap:8px}
+.svc{display:flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid var(--line);border-radius:999px;background:var(--panel);font-size:12px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--mute)}
+.svc.up .dot{background:var(--ok)}.svc.down .dot{background:var(--bad)}
+main{max-width:1180px;margin:0 auto;padding:24px 28px 48px;display:grid;gap:24px}
+.totals{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--line);border:1px solid var(--line)}
+.totals div{background:var(--panel);padding:14px 16px}
+.totals b{display:block;font-size:26px;font-weight:500}
+.totals span{color:var(--mute);font-size:12px}
+.t-ok b{color:var(--ok)}.t-rev b{color:var(--rev)}.t-bad b{color:var(--bad)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:24px;align-items:start}
+@media(max-width:900px){.cols{grid-template-columns:1fr}}
+section{background:var(--panel);border:1px solid var(--line)}
+section h2{margin:0;padding:12px 16px;font-size:14px;font-weight:600;border-bottom:1px solid var(--line)}
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:9px 16px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-weight:500;color:var(--mute);font-size:12px}
+td.num,th.num{text-align:right}
+tr:last-child td{border-bottom:0}
+.pill{display:inline-block;padding:1px 9px;border-radius:999px;font-size:12px;font-weight:500}
+.CONFIRMED{background:var(--okbg);color:var(--ok)}
+.REVERSED{background:var(--revbg);color:var(--rev)}
+.REVERSING{background:var(--revbg);color:var(--rev)}
+.FAILED{background:var(--badbg);color:var(--bad)}
+.empty{padding:28px 16px;color:var(--mute)}
+tr.row{cursor:pointer}tr.row:hover td{background:var(--bg)}
+tr.hist td{background:var(--bg);white-space:normal;color:var(--mute);font-size:12px}
+form{padding:16px;display:grid;gap:12px}
+label{display:grid;gap:4px;font-size:12px;color:var(--mute)}
+input,select{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);padding:7px 9px;border-radius:4px;width:100%}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+button{font:inherit;font-weight:500;background:var(--accent);color:var(--panel);border:0;padding:9px 14px;border-radius:4px;cursor:pointer}
+button:disabled{opacity:.5;cursor:wait}
+:focus-visible{outline:2px solid var(--ok);outline-offset:2px}
+.msg{font-size:12px;min-height:18px;color:var(--mute)}
+.msg.err{color:var(--bad)}
+.note{padding:0 16px 16px;color:var(--mute);font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>BRICS Pay payments</h1>
+    <p>Conceptual design demo. Not a real payment system.</p>
+  </div>
+  <div class="health" id="health" aria-label="Service health"></div>
+</header>
+
+<main>
+  <div class="totals" id="totals"></div>
+
+  <div class="cols">
+    <section>
+      <h2>Payments</h2>
+      <div class="scroll"><table>
+        <thead><tr><th>Time</th><th>Route</th><th class="num">Sent</th><th class="num">Received</th><th>State</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table></div>
+    </section>
+
+    <section>
+      <h2>Send a test payment</h2>
+      <form id="pay">
+        <div class="two">
+          <label>Payer country<select id="pc"><option>IN</option><option>CN</option><option>BR</option><option>RU</option><option>ZA</option></select></label>
+          <label>Payee country<select id="qc"><option>CN</option><option>IN</option><option>BR</option><option>RU</option><option>ZA</option></select></label>
+        </div>
+        <div class="two">
+          <label>Amount<input id="amt" class="mono" value="10000" inputmode="decimal" required></label>
+          <label>Currency<select id="cur"><option>INR</option><option>CNY</option></select></label>
+        </div>
+        <label>Access token<input id="tok" value="demo-token" autocomplete="off"></label>
+        <button id="send" type="submit">Send payment</button>
+        <div class="msg" id="msg" role="status"></div>
+      </form>
+      <p class="note">Each payment gets a new idempotency key. To see a REVERSED payment, restart the payment router with BRICS_FAIL_CREDIT_COUNTRY=CN and send IN to CN.</p>
+    </section>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const tok = () => $("tok").value.trim();
+const auth = () => ({Authorization: "Bearer " + tok()});
+const NAMES = {"api-gateway":"Gateway","payment-router":"Router","fx-rates-engine":"FX","risk-compliance":"Risk","settlement-ledger":"Ledger"};
+
+function esc(s){return String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+function fmt(n){return Number(n).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2})}
+
+async function loadHealth(){
+  try{
+    const r = await fetch("/v1/services/health",{headers:auth()});
+    const h = await r.json();
+    $("health").innerHTML = Object.entries(NAMES).map(([k,n]) =>
+      `<span class="svc ${h[k]==="up"?"up":"down"}"><i class="dot"></i>${n}: ${h[k]||"unknown"}</span>`).join("");
+  }catch(e){
+    $("health").innerHTML = '<span class="svc down"><i class="dot"></i>Gateway unreachable</span>';
+  }
+}
+
+async function loadPayments(){
+  try{
+    const r = await fetch("/v1/transactions",{headers:auth()});
+    if(!r.ok) throw new Error(r.status === 401 ? "Token rejected. Enter a bearer token." : "Could not load payments (" + r.status + ").");
+    render(await r.json());
+  }catch(e){
+    $("rows").innerHTML = `<tr><td colspan="5" class="empty">${esc(e.message)}</td></tr>`;
+  }
+}
+
+function render(list){
+  const c = s => list.filter(t => t.state === s).length;
+  const sent = list.filter(t => t.state === "CONFIRMED" && t.send_currency === "INR")
+                   .reduce((a,t) => a + Number(t.send_amount), 0);
+  $("totals").innerHTML =
+    `<div><b class="mono">${list.length}</b><span>Payments</span></div>` +
+    `<div class="t-ok"><b class="mono">${c("CONFIRMED")}</b><span>Confirmed</span></div>` +
+    `<div class="t-rev"><b class="mono">${c("REVERSED")+c("REVERSING")}</b><span>Reversed (refunded)</span></div>` +
+    `<div class="t-bad"><b class="mono">${c("FAILED")}</b><span>Failed before debit</span></div>` +
+    `<div><b class="mono">${fmt(sent)}</b><span>INR confirmed</span></div>`;
+  if(!list.length){
+    $("rows").innerHTML = '<tr><td colspan="5" class="empty">No payments yet. Send a test payment from the panel on the right.</td></tr>';
+    return;
+  }
+  $("rows").innerHTML = list.map((t,i) => `
+    <tr class="row" data-i="${i}" tabindex="0" title="Show state history">
+      <td class="mono">${new Date(t.created_at).toLocaleTimeString()}</td>
+      <td>${esc(t.payer_country)} to ${esc(t.payee_country)}</td>
+      <td class="num mono">${fmt(t.send_amount)} ${esc(t.send_currency)}</td>
+      <td class="num mono">${t.receive_amount ? fmt(t.receive_amount) + " " + esc(t.receive_currency) : "-"}</td>
+      <td><span class="pill ${esc(t.state)}">${esc(t.state)}</span></td>
+    </tr>
+    <tr class="hist" id="h${i}" hidden><td colspan="5">
+      ${t.failure_reason ? "Reason: " + esc(t.failure_reason) + "<br>" : ""}
+      ${t.history.map(esc).join(" > ")}
+    </td></tr>`).join("");
+}
+
+$("rows").addEventListener("click", e => {
+  const row = e.target.closest("tr.row"); if(!row) return;
+  const h = $("h" + row.dataset.i); h.hidden = !h.hidden;
+});
+$("rows").addEventListener("keydown", e => {
+  if(e.key === "Enter") e.target.closest("tr.row")?.click();
+});
+
+$("pay").addEventListener("submit", async e => {
+  e.preventDefault();
+  const btn = $("send"), msg = $("msg");
+  btn.disabled = true; msg.className = "msg"; msg.textContent = "Sending...";
+  const body = {
+    payer_id: "user-" + $("pc").value.toLowerCase() + "-1", payer_country: $("pc").value, payer_account_ref: "demo:payer",
+    payee_id: "merchant-" + $("qc").value.toLowerCase() + "-1", payee_country: $("qc").value, payee_account_ref: "demo:payee",
+    send_amount: $("amt").value.trim(), send_currency: $("cur").value,
+    idempotency_key: "dash-" + Date.now() + "-" + Math.random().toString(36).slice(2,8)
+  };
+  try{
+    const r = await fetch("/v1/payments",{method:"POST",headers:{...auth(),"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const d = await r.json();
+    if(!r.ok) throw new Error(typeof d.detail === "string" ? d.detail : "Payment rejected. Check the amount and countries.");
+    msg.textContent = "Payment " + d.state + (d.failure_reason ? ": " + d.failure_reason : "");
+  }catch(err){
+    msg.className = "msg err"; msg.textContent = err.message;
+  }
+  btn.disabled = false;
+  loadPayments(); loadHealth();
+});
+
+loadHealth(); loadPayments();
+setInterval(() => { loadHealth(); loadPayments(); }, 5000);
+</script>
+</body>
+</html>
