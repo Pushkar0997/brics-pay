@@ -87,7 +87,7 @@ button:disabled{opacity:.5;cursor:wait}
         </div>
         <div class="two">
           <label>Amount<input id="amt" class="mono" value="10000" inputmode="decimal" required></label>
-          <label>Currency<select id="cur"><option>INR</option><option>CNY</option></select></label>
+          <label>Currency<select id="cur"><option>INR</option><option>CNY</option><option>BRL</option><option>RUB</option><option>ZAR</option></select></label>
         </div>
         <label>Access token<input id="tok" value="demo-token" autocomplete="off"></label>
         <button id="send" type="submit">Send payment</button>
@@ -102,6 +102,7 @@ button:disabled{opacity:.5;cursor:wait}
 const $ = id => document.getElementById(id);
 const tok = () => $("tok").value.trim();
 const auth = () => ({Authorization: "Bearer " + tok()});
+const CCY = {IN:"INR",CN:"CNY",BR:"BRL",RU:"RUB",ZA:"ZAR"};
 const NAMES = {"api-gateway":"Gateway","payment-router":"Router","fx-rates-engine":"FX","risk-compliance":"Risk","settlement-ledger":"Ledger"};
 
 function esc(s){return String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
@@ -176,7 +177,7 @@ $("pay").addEventListener("submit", async e => {
   };
   try{
     const r = await fetch("/v1/payments",{method:"POST",headers:{...auth(),"Content-Type":"application/json"},body:JSON.stringify(body)});
-    const d = await r.json();
+    let d = {}; try{ d = await r.json(); }catch(_){ d = {detail: "Server error (" + r.status + ")"}; }
     if(!r.ok) throw new Error(typeof d.detail === "string" ? d.detail : "Payment rejected. Check the amount and countries.");
     msg.textContent = "Payment " + d.state + (d.failure_reason ? ": " + d.failure_reason : "");
   }catch(err){
@@ -186,6 +187,8 @@ $("pay").addEventListener("submit", async e => {
   loadPayments(); loadHealth();
 });
 
+$("pc").addEventListener("change", () => { $("cur").value = CCY[$("pc").value]; });
+$("cur").value = CCY[$("pc").value];
 loadHealth(); loadPayments();
 setInterval(() => { loadHealth(); loadPayments(); }, 5000);
 </script>
