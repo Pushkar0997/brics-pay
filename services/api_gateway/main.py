@@ -83,38 +83,3 @@ async def services_health(caller: str = Depends(require_caller)) -> dict:
 def dashboard() -> FileResponse:
     return FileResponse(Path(__file__).parent / "dashboard.html")
 
-SERVICES = {
-    "api-gateway": None,
-    "payment-router": PAYMENT_ROUTER_URL,
-    "fx-rates-engine": os.environ.get("FX_RATES_ENGINE_URL", "http://fx-rates-engine:8002"),
-    "risk-compliance": os.environ.get("RISK_COMPLIANCE_URL", "http://risk-compliance:8003"),
-    "settlement-ledger": os.environ.get("SETTLEMENT_LEDGER_URL", "http://settlement-ledger:8004"),
-}
-
-
-@app.get("/v1/transactions")
-async def list_transactions(caller: str = Depends(require_caller)) -> list:
-    async with httpx.AsyncClient(timeout=10) as client:
-        resp = await client.get(f"{PAYMENT_ROUTER_URL}/internal/transactions")
-        resp.raise_for_status()
-        return resp.json()
-
-
-@app.get("/v1/services/health")
-async def services_health(caller: str = Depends(require_caller)) -> dict:
-    result = {"api-gateway": "up"}
-    async with httpx.AsyncClient(timeout=2) as client:
-        for name, url in SERVICES.items():
-            if url is None:
-                continue
-            try:
-                r = await client.get(f"{url}/healthz")
-                result[name] = "up" if r.status_code == 200 else "down"
-            except httpx.HTTPError:
-                result[name] = "down"
-    return result
-
-
-@app.get("/dashboard", include_in_schema=False)
-def dashboard() -> FileResponse:
-    return FileResponse(Path(__file__).parent / "dashboard.html")
